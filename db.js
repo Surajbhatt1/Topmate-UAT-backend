@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
-const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/topmate';
+// const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/topmate';
+const mongoUri = process.env.MONGODB_URI || 'mongodb+srv://parkchan1616_db_user:parkchan1616@topmate.sdtkfla.mongodb.net/?appName=topmate';
 
 mongoose.connect(mongoUri);
 
