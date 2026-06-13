@@ -35,6 +35,24 @@ const bookingSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    googleMeetCreated: {
+      type: Boolean,
+      default: false,
+    },
+    googleMeetLink: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    googleCalendarEventId: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    googleMeetError: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true }
 );

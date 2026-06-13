@@ -4,181 +4,159 @@ const Booking = require('../model/Booking');
 
 const router = express.Router();
 
-const requiredFields = [
-  'candidateName',
-  'emailAddress',
-  'mobileNumber',
-  'selectedService',
-  'preferredDate',
-  'preferredTime',
-];
+// SMTP Transporter
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT),
+  secure: process.env.SMTP_SECURE === 'true',
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
-const services = [
-  'English Spoken',
-  'Technical Interview Guidance',
-  'Personal Interview Guidance',
-  'Career Coaching',
-  'Startup Consulting',
-  'Resume Review',
-  'Communication Skills',
-  'Mock Interviews',
-];
-
-function createTransporter() {
-  const missingConfig = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS'].filter((key) => !process.env[key]);
-
-  if (missingConfig.length) {
-    return {
-      transporter: null,
-      missingConfig,
-    };
-  }
-
-  return {
-    transporter: nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT || 587),
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    }),
-    missingConfig: [],
-  };
-}
-
-function formatSessionDate(date, time) {
-  return `${date} at ${time}`;
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-async function sendBookingEmail(booking) {
-  const { transporter, missingConfig } = createTransporter();
-
-  if (!transporter) {
-    return {
-      sent: false,
-      reason: `Email is not configured. Missing: ${missingConfig.join(', ')}`,
-    };
-  }
-
-  const sessionTime = formatSessionDate(booking.preferredDate, booking.preferredTime);
-  const safeName = escapeHtml(booking.candidateName);
-  const safeService = escapeHtml(booking.selectedService);
-  const safeSessionTime = escapeHtml(sessionTime);
-
-  try {
-    await transporter.sendMail({
-      from: process.env.MAIL_FROM || process.env.SMTP_USER,
-      to: booking.emailAddress,
-      subject: `Booking confirmed: ${booking.selectedService}`,
-      text: `Hi ${booking.candidateName},
-
-Your session booking request has been received.
-
-Session Name: ${booking.selectedService}
-Session Time: ${sessionTime}
-
-Thank you,
-Topmate Sessions`,
-      html: `
-      <p>Hi ${safeName},</p>
-      <p>Your session booking request has been received.</p>
-      <p><strong>Session Name:</strong> ${safeService}</p>
-      <p><strong>Session Time:</strong> ${safeSessionTime}</p>
-      <p>Thank you,<br>Topmate Sessions</p>
-    `,
-    });
-
-    return { sent: true, reason: null };
-  } catch (error) {
-    console.error('Booking email error:', error);
-    return {
-      sent: false,
-      reason: error.message || 'Unable to send booking confirmation email',
-    };
-  }
-}
+// ==============================
+// Create Booking
+// ==============================
 
 router.post('/', async (req, res) => {
   try {
-    const missingField = requiredFields.find((field) => !req.body[field]);
+    const {
+      candidateName,
+      emailAddress,
+      mobileNumber,
+      selectedService,
+      preferredDate,
+      preferredTime,
+    } = req.body;
 
-    if (missingField) {
-      return res.status(400).json({ message: `${missingField} is required` });
+    if (
+      !candidateName ||
+      !emailAddress ||
+      !mobileNumber ||
+      !selectedService ||
+      !preferredDate ||
+      !preferredTime
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'All fields are required',
+      });
     }
 
     const booking = await Booking.create({
-      candidateName: req.body.candidateName,
-      emailAddress: req.body.emailAddress,
-      mobileNumber: req.body.mobileNumber,
-      selectedService: req.body.selectedService,
-      preferredDate: req.body.preferredDate,
-      preferredTime: req.body.preferredTime,
+      candidateName,
+      emailAddress,
+      mobileNumber,
+      selectedService,
+      preferredDate,
+      preferredTime,
     });
 
-    const emailResult = await sendBookingEmail(booking);
+    try {
+      await transporter.sendMail({
+        from: process.env.MAIL_FROM,
+        to: emailAddress,
+        subject: 'Booking Confirmation',
+        html: `
+          <h2>Booking Confirmed 🎉</h2>
+          <p>Hello ${candidateName},</p>
 
-    if (emailResult.sent) {
+          <p>Your session has been booked successfully.</p>
+
+          <table border="1" cellpadding="8">
+            <tr>
+              <td><strong>Service</strong></td>
+              <td>${selectedService}</td>
+            </tr>
+            <tr>
+              <td><strong>Date</strong></td>
+              <td>${preferredDate}</td>
+            </tr>
+            <tr>
+              <td><strong>Time</strong></td>
+              <td>${preferredTime}</td>
+            </tr>
+          </table>
+
+          <br/>
+
+          <p>We will contact you shortly.</p>
+
+          <p>Regards,<br/>Topmate Team</p>
+        `,
+      });
+
       booking.emailSent = true;
       await booking.save();
+    } catch (emailError) {
+      console.error('Email Error:', emailError.message);
     }
 
-    return res.status(201).json({
-      message: emailResult.sent
-        ? 'Booking saved and confirmation email sent'
-        : `Booking saved. ${emailResult.reason}`,
+    res.status(201).json({
+      success: true,
+      message: 'Booking created successfully',
       booking,
-      emailSent: emailResult.sent,
-      emailError: emailResult.sent ? null : emailResult.reason,
     });
   } catch (error) {
-    console.error('Booking error:', error);
-    return res.status(500).json({ message: 'Unable to book session right now' });
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: 'Internal Server Error',
+    });
   }
 });
 
+// ==============================
+// Get All Bookings
+// ==============================
+
 router.get('/', async (req, res) => {
   try {
-    const filter = {};
+    const bookings = await Booking.find().sort({
+      createdAt: -1,
+    });
 
-    if (req.query.date) {
-      filter.preferredDate = req.query.date;
-    }
-
-    if (req.query.service) {
-      filter.selectedService = req.query.service;
-    }
-
-    const bookings = await Booking.find(filter).sort({ preferredDate: -1, preferredTime: -1, createdAt: -1 });
-
-    const totalBookings = await Booking.countDocuments();
-    const today = new Date().toISOString().split('T')[0];
-    const todayBookings = await Booking.countDocuments({ preferredDate: today });
-    const emailPending = await Booking.countDocuments({ emailSent: false });
-
-    return res.json({
+    res.status(200).json({
+      success: true,
+      count: bookings.length,
       bookings,
-      services,
-      stats: {
-        totalBookings,
-        todayBookings,
-        emailPending,
-        filteredBookings: bookings.length,
-      },
     });
   } catch (error) {
-    console.error('Fetch bookings error:', error);
-    return res.status(500).json({ message: 'Unable to fetch bookings right now' });
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      message: 'Unable to fetch bookings',
+    });
+  }
+});
+
+// ==============================
+// Get Booking By ID
+// ==============================
+
+router.get('/:id', async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id);
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      booking,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server Error',
+    });
   }
 });
 
