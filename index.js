@@ -124,11 +124,11 @@ const app = express();
 // Connect Database
 connectDB();
 
-// Middleware
+// // Middleware
 app.use(cors());
 app.use(express.json());
 
-// SMTP Configuration
+// // SMTP Configuration
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT),
@@ -139,7 +139,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// Verify SMTP
+// // Verify SMTP
 transporter.verify((error) => {
   if (error) {
     console.error('❌ SMTP Error:', error.message);
@@ -148,12 +148,12 @@ transporter.verify((error) => {
   }
 });
 
-// Home Route
+// // Home Route
 app.get('/', (req, res) => {
   res.send('🚀 Server is ready');
 });
 
-// Test Mail Route
+// // Test Mail Route
 app.get('/send-test-mail', async (req, res) => {
   try {
     const info = await transporter.sendMail({
@@ -181,10 +181,10 @@ app.get('/send-test-mail', async (req, res) => {
   }
 });
 
-// Booking Routes
+// // Booking Routes
 app.use('/api/bookings', bookingRoutes);
 
-// 404 Route
+// // 404 Route
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -192,14 +192,16 @@ app.use((req, res) => {
   });
 });
 
-// Start Server
-// const PORT = process.env.PORT || 9000;
+// // Start Server
+// // const PORT = process.env.PORT || 9000;
 
-// app.listen(PORT, () => {
-//   console.log(`🚀 Server is ready at http://localhost:${PORT}`);
-// });
+// // app.listen(PORT, () => {
+// //   console.log(`🚀 Server is ready at http://localhost:${PORT}`);
+// // });
 const PORT = process.env.PORT || 9000;
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
+
+
