@@ -1,115 +1,3 @@
-// const express = require('express');
-// const cors = require('cors');
-// require('dotenv').config();
-// const db = require('./db');
-// const bookingRoutes = require('./routes/bookingRoutes');
-
-// const app = express();
-
-// app.use(cors());
-// app.use(express.json());
-
-// app.get('/', (req, res) => {
-//   res.send('The server is ready to connect');
-// });
-
-// app.use('/api/bookings', bookingRoutes);
-
-// const PORT = process.env.PORT || 9000;
-
-// app.listen(PORT, () => {
-//   console.log(`Server is ready at http://localhost:${PORT}`);
-// });
-
-
-
-// const express = require('express');
-// const cors = require('cors');
-// const nodemailer = require('nodemailer');
-// require('dotenv').config();
-
-// const db = require('./db');
-// const bookingRoutes = require('./routes/bookingRoutes');
-
-// const app = express();
-
-// app.use(cors());
-// app.use(express.json());
-
-// // ==============================
-// // SMTP Configuration
-// // ==============================
-
-// const transporter = nodemailer.createTransport({
-//   host: process.env.SMTP_HOST,
-//   port: Number(process.env.SMTP_PORT),
-//   secure: process.env.SMTP_SECURE === 'true',
-//   auth: {
-//     user: process.env.SMTP_USER,
-//     pass: process.env.SMTP_PASS,
-//   },
-// });
-
-// // Verify SMTP Connection
-// transporter.verify((error, success) => {
-//   if (error) {
-//     console.error('❌ SMTP Error:', error);
-//   } else {
-//     console.log('✅ SMTP Connected Successfully');
-//   }
-// });
-
-// // ==============================
-// // Routes
-// // ==============================
-
-// app.get('/', (req, res) => {
-//   res.send('The server is ready to connect');
-// });
-
-// // Test Email Route
-// app.get('/send-test-mail', async (req, res) => {
-//   try {
-//     const info = await transporter.sendMail({
-//       from: process.env.MAIL_FROM,
-//       to: process.env.SMTP_USER,
-//       subject: 'Topmate Test Email',
-//       html: `
-//         <h2>Email Working Successfully 🚀</h2>
-//         <p>Your Gmail SMTP configuration is working.</p>
-//       `,
-//     });
-
-//     console.log('Message Sent:', info.messageId);
-
-//     res.status(200).json({
-//       success: true,
-//       message: 'Email sent successfully',
-//       messageId: info.messageId,
-//     });
-//   } catch (error) {
-//     console.error('❌ Mail Error:', error);
-
-//     res.status(500).json({
-//       success: false,
-//       error: error.message,
-//     });
-//   }
-// });
-
-// app.use('/api/bookings', bookingRoutes);
-
-// // ==============================
-// // Server
-// // ==============================
-
-// const PORT = process.env.PORT || 9000;
-
-// app.listen(PORT, () => {
-//   console.log(`🚀 Server is ready at http://localhost:${PORT}`);
-// });
-
-
 require('dotenv').config();
 
 const express = require('express');
@@ -121,14 +9,25 @@ const bookingRoutes = require('./routes/bookingRoutes');
 
 const app = express();
 
-// Connect Database
-connectDB();
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-// // Middleware
-app.use(cors());
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked origin: ${origin}`));
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
-// // SMTP Configuration
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT),
@@ -139,21 +38,39 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// // Verify SMTP
-transporter.verify((error) => {
-  if (error) {
-    console.error('❌ SMTP Error:', error.message);
-  } else {
-    console.log('✅ SMTP Connected Successfully');
-  }
-});
+const shouldVerifySmtp =
+  process.env.VERIFY_SMTP_ON_STARTUP === 'true' || require.main === module;
 
-// // Home Route
+if (shouldVerifySmtp) {
+  transporter.verify((error) => {
+    if (error) {
+      console.error('SMTP Error:', error.message);
+    } else {
+      console.log('SMTP connected successfully');
+    }
+  });
+}
+
 app.get('/', (req, res) => {
-  res.send('🚀 Server is ready');
+  res.send('Server is ready');
 });
 
-// // Test Mail Route
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'Backend is running',
+  });
+});
+
+const requireDatabase = async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
 app.get('/send-test-mail', async (req, res) => {
   try {
     const info = await transporter.sendMail({
@@ -161,7 +78,7 @@ app.get('/send-test-mail', async (req, res) => {
       to: process.env.SMTP_USER,
       subject: 'Topmate Test Email',
       html: `
-        <h2>Email Working Successfully 🚀</h2>
+        <h2>Email Working Successfully</h2>
         <p>Your SMTP configuration is working.</p>
       `,
     });
@@ -181,10 +98,8 @@ app.get('/send-test-mail', async (req, res) => {
   }
 });
 
-// // Booking Routes
-app.use('/api/bookings', bookingRoutes);
+app.use('/api/bookings', requireDatabase, bookingRoutes);
 
-// // 404 Route
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -192,16 +107,21 @@ app.use((req, res) => {
   });
 });
 
-// // Start Server
-// // const PORT = process.env.PORT || 9000;
+app.use((err, req, res, next) => {
+  console.error(err.message || err);
 
-// // app.listen(PORT, () => {
-// //   console.log(`🚀 Server is ready at http://localhost:${PORT}`);
-// // });
-const PORT = process.env.PORT || 9000;
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  res.status(500).json({
+    success: false,
+    message: err.message || 'Internal Server Error',
+  });
 });
 
+if (require.main === module) {
+  const PORT = process.env.PORT || 9000;
 
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+module.exports = app;
